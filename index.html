@@ -283,6 +283,14 @@
 // 設定活動日期根據瀏覽器當地時間實時自動初始化
 document.getElementById('eventDate').valueAsDate = new Date();
 
+// 頁面載入時檢查是否有儲存過的主題顏色
+window.addEventListener('DOMContentLoaded', () => {
+    let savedColor = localStorage.getItem('obs_ui_primary_color');
+    if (savedColor) {
+        changeUIColor(savedColor, false);
+    }
+});
+
 function toggleSubSection(bodyId, btnId) {
     let body = document.getElementById(bodyId);
     let btn = document.getElementById(btnId);
@@ -296,14 +304,30 @@ function toggleSubSection(bodyId, btnId) {
     }
 }
 
-function changeUIColor(val) {
+function changeUIColor(val, save = true) {
     if(/^#[0-9A-F]{6}$/i.test(val)) {
         document.documentElement.style.setProperty('--primary-color', val);
         document.getElementById('uiColorPicker').value = val;
         document.getElementById('uiColorText').value = val;
         document.querySelector('.global-header').style.backgroundColor = val;
+        
+        let resultLabel = document.getElementById('resultListLabel');
+        if (resultLabel) {
+            resultLabel.style.color = val;
+        }
+
+        if (save) {
+            localStorage.setItem('obs_ui_primary_color', val);
+        }
     }
 }
+
+// 監聽跨視窗/OBS互動視窗的顏色同步
+window.addEventListener('storage', (event) => {
+    if (event.key === 'obs_ui_primary_color' && event.newValue) {
+        changeUIColor(event.newValue, false);
+    }
+});
 
 function updateTitle() {
     let titleVal = document.getElementById('boardTitleInput').value;
@@ -489,9 +513,11 @@ function runLottery() {
         let rand = Math.random() * 100;
         let assignedPoints = weightData[0] ? weightData[0].point : 1;
         
+        let cwFound = false;
         for (let cw of cumulativeWeights) {
             if (rand <= cw.limit) {
                 assignedPoints = cw.points;
+                cwFound = true;
                 break;
             }
         }
