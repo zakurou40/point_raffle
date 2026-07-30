@@ -100,10 +100,36 @@
         /* 狀態列與卡片顯示區塊 */
         .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; background: white; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e8ed; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
         .card-container { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-content: start; overflow: hidden; padding: 2px; overflow-y: auto; flex: 1; }
-        .user-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s; height: 62px; }
+        
+        /* 嚴格固定卡片尺寸，防止任何自動變形與高度撐大 */
+        .user-card { 
+            background: white; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            padding: 8px 10px; 
+            text-align: center; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02); 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between; 
+            transition: transform 0.2s; 
+            height: 62px; 
+            box-sizing: border-box; 
+            overflow: hidden; 
+        }
         .user-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         
-        .user-name { font-weight: 700; color: #2d3748; font-size: 13px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* 嚴格限制名字單行顯示，超長自動顯示省略號 (...) */
+        .user-name { 
+            font-weight: 700; 
+            color: #2d3748; 
+            font-size: 13px; 
+            margin-bottom: 4px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            width: 100%;
+        }
         
         .user-points { font-size: 14px; color: var(--primary-color); font-weight: bold; background: #f8fafc; padding: 2px 6px; border-radius: 4px; min-height: 20px; display: inline-block; font-family: var(--num-font); }
         .user-points.pop { animation: popOnly 0.35s ease; }
@@ -133,7 +159,6 @@
         .result-table th { background-color: #f8fafc; color: #4a5568; font-weight: 600; position: sticky; top: 0; z-index: 5; font-size: 12px; }
         .result-table tr:hover { background-color: #f8fafc; }
         
-        /* 替換原本的 display: none，改為透明絕對定位，確保在 OBS 互動視窗中可被 select() */
         .export-textarea { 
             position: absolute; 
             left: -9999px; 
@@ -188,7 +213,7 @@
 
                         <div class="control-section">
                             <label>活動日期：</label>
-                            <input type="date" id="eventDate" onchange="previewNames()" style="margin-bottom:6px;">
+                            <input type="date" id="eventDate" onchange="saveAndPreview()" style="margin-bottom:6px;">
                         </div>
 
                         <!-- 複製 OBS 瀏覽器來源連結按鈕 -->
@@ -228,7 +253,7 @@
                     <div class="group-body collapsed" id="audienceGroupBody">
                         <div class="control-section" style="margin-bottom:0;">
                             <label>觀眾名單 (每行一位)：</label>
-                            <textarea id="names"></textarea>
+                            <textarea id="names" oninput="saveAndPreview()"></textarea>
                         </div>
                     </div>
                 </div>
@@ -293,22 +318,65 @@
     </div>
 
 <script>
-// 設定活動日期根據瀏覽器當地時間實時自動初始化
-document.getElementById('eventDate').valueAsDate = new Date();
+let urlParams = new URLSearchParams(window.location.search);
 
-// 頁面載入時檢查：優先讀取網址的 ?color= 參數（專供 OBS 讀取），其次讀取 localStorage
+// 頁面載入時：優先讀取網址參數，若無則從 localStorage 讀取保留的紀錄
 window.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
     let colorParam = urlParams.get('color');
+    let titleParam = urlParams.get('title');
+    let dateParam = urlParams.get('date');
+    let namesParam = urlParams.get('names');
 
-    if (colorParam) {
-        changeUIColor(colorParam, false);
-    } else {
-        let savedColor = localStorage.getItem('obs_ui_primary_color');
-        if (savedColor) {
-            changeUIColor(savedColor, false);
-        }
+    // 1. 載入標題
+    let savedTitle = titleParam || localStorage.getItem('obs_board_title');
+    if (savedTitle) {
+        document.getElementById('boardTitleInput').value = savedTitle;
+        updateTitle(false);
     }
+
+    // 2. 載入 UI 顏色
+    let savedColor = colorParam || localStorage.getItem('obs_ui_primary_color');
+    if (savedColor) {
+        changeUIColor(savedColor, false);
+    } else {
+        changeUIColor('#ff8080', false);
+    }
+
+    // 3. 載入日期
+    let savedDate = dateParam || localStorage.getItem('obs_event_date');
+    if (savedDate) {
+        document.getElementById('eventDate').value = savedDate;
+    } else {
+        document.getElementById('eventDate').valueAsDate = new Date();
+    }
+
+    // 4. 載入權重設定
+    let savedWeight = localStorage.getItem('obs_weight_data');
+    if (savedWeight) {
+        try {
+            weightData = JSON.parse(savedWeight);
+        } catch(e) {}
+    }
+    renderWeightRows();
+
+    // 5. 載入觀眾名單
+    let savedNames = namesParam ? decodeURIComponent(namesParam) : localStorage.getItem('obs_audience_names');
+    if (savedNames) {
+        document.getElementById('names').value = savedNames;
+    }
+
+    // 6. 載入已儲存的抽獎結果（若有的話直接還原顯示）
+    let savedResults = localStorage.getItem('obs_lottery_results');
+    if (savedResults) {
+        try {
+            let parsedResults = JSON.parse(savedResults);
+            restoreLotteryResults(parsedResults);
+            return;
+        } catch(e) {}
+    }
+
+    // 若無儲存的抽獎結果，則僅渲染一般預覽名單
+    previewNames();
 });
 
 function toggleSubSection(bodyId, btnId) {
@@ -349,18 +417,40 @@ window.addEventListener('storage', (event) => {
     }
 });
 
-function updateTitle() {
+function updateTitle(save = true) {
     let titleVal = document.getElementById('boardTitleInput').value;
     document.getElementById('mainHeaderTitle').innerText = titleVal;
     document.getElementById('resultListLabel').innerText = `${titleVal} 結果清單`;
+    if (save) {
+        localStorage.setItem('obs_board_title', titleVal);
+    }
+}
+
+// 儲存所有狀態並預覽（當手動修改名單時，清空舊的抽獎結果）
+function saveAndPreview() {
+    let titleVal = document.getElementById('boardTitleInput').value;
+    let dateVal = document.getElementById('eventDate').value;
+    let namesVal = document.getElementById('names').value;
+
+    localStorage.setItem('obs_board_title', titleVal);
+    localStorage.setItem('obs_event_date', dateVal);
+    localStorage.setItem('obs_audience_names', namesVal);
+    
+    // 名單變更時清除舊的抽獎結果點數記憶
+    localStorage.removeItem('obs_lottery_results');
+
+    previewNames();
 }
 
 // 複製 OBS 瀏覽器來源連結功能
 function copyObsLink() {
     let currentUrl = window.location.href.split('#')[0].split('?')[0];
     let currentColor = document.getElementById('uiColorText').value;
+    let currentTitle = document.getElementById('boardTitleInput').value;
+    let currentDate = document.getElementById('eventDate').value;
+    let currentNames = document.getElementById('names').value;
     
-    let obsLink = `${currentUrl}?color=${encodeURIComponent(currentColor)}`;
+    let obsLink = `${currentUrl}?color=${encodeURIComponent(currentColor)}&title=${encodeURIComponent(currentTitle)}&date=${encodeURIComponent(currentDate)}&names=${encodeURIComponent(currentNames)}`;
     
     let tempInput = document.createElement('textarea');
     tempInput.value = obsLink;
@@ -369,7 +459,7 @@ function copyObsLink() {
     document.execCommand('copy');
     document.body.removeChild(tempInput);
 
-    alert('已成功複製！請黏貼到OBS的有瀏覽器來源！(❁´◡`❁)');
+    alert('已成功複製！請黏貼到 OBS 的瀏覽器來源中！(❁´◡`❁)');
 }
 
 let weightData = [
@@ -402,11 +492,13 @@ function renderWeightRows() {
 
 function updateWeightData(index, field, value) {
     weightData[index][field] = parseFloat(value) || 0;
+    localStorage.setItem('obs_weight_data', JSON.stringify(weightData));
     checkTotal();
 }
 
 function addWeightRow() {
     weightData.push({ point: 0, percent: 0 });
+    localStorage.setItem('obs_weight_data', JSON.stringify(weightData));
     renderWeightRows();
 }
 
@@ -416,6 +508,7 @@ function deleteWeightRow(index) {
         return;
     }
     weightData.splice(index, 1);
+    localStorage.setItem('obs_weight_data', JSON.stringify(weightData));
     renderWeightRows();
 }
 
@@ -445,8 +538,6 @@ function formatDateMMDDYY(dateString) {
     }
     return dateString;
 }
-
-document.getElementById('names').addEventListener('input', previewNames);
 
 function previewNames() {
     let rawDate = document.getElementById('eventDate').value;
@@ -485,6 +576,44 @@ function previewNames() {
         `;
         tableBody.appendChild(row);
     });
+}
+
+// 還原已儲存的抽獎結果
+function restoreLotteryResults(savedResults) {
+    let rawDate = document.getElementById('eventDate').value;
+    let formattedDate = formatDateMMDDYY(rawDate);
+
+    document.getElementById('participantCount').innerText = `參與人數：${savedResults.length} 人`;
+    document.getElementById('drawStatus').innerText = `狀態：抽獎完成！`;
+
+    let container = document.getElementById('cardContainer');
+    container.innerHTML = '';
+    let tableBody = document.querySelector('#resultTable tbody');
+    tableBody.innerHTML = '';
+
+    let exportLines = [];
+
+    savedResults.forEach(item => {
+        let card = document.createElement('div');
+        card.className = 'user-card';
+        card.innerHTML = `
+            <div class="user-name" title="${item.name}">${item.name}</div>
+            <div class="user-points">${item.points} 點</div>
+        `;
+        container.appendChild(card);
+
+        let row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${formattedDate}</td>
+            <td style="font-weight:600;">${item.name}</td>
+            <td style="color:var(--primary-color); font-weight:bold; font-family:var(--num-font);">${item.points}</td>
+        `;
+        tableBody.appendChild(row);
+
+        exportLines.push(`${formattedDate}\t${item.name}\t${item.points}`);
+    });
+
+    document.getElementById('exportText').value = exportLines.join('\n');
 }
 
 function runLottery() {
@@ -535,6 +664,7 @@ function runLottery() {
     });
 
     let exportLines = [];
+    let lotteryResultsToSave = [];
     let currentIndex = 0;
 
     let intervalId = setInterval(() => {
@@ -543,6 +673,9 @@ function runLottery() {
             drawBtn.disabled = false;
             document.getElementById('drawStatus').innerText = `狀態：抽獎完成！`;
             document.getElementById('exportText').value = exportLines.join('\n');
+            
+            // 完整儲存抽獎後的名單與點數資料
+            localStorage.setItem('obs_lottery_results', JSON.stringify(lotteryResultsToSave));
             return;
         }
 
@@ -572,11 +705,12 @@ function runLottery() {
         `;
 
         exportLines.push(`${formattedDate}\t${name}\t${assignedPoints}`);
+        lotteryResultsToSave.push({ name: name, points: assignedPoints });
         currentIndex++;
     }, 250);
 }
 
-// 強化防護的複製結果函式（相容 OBS 互動介面）
+// 強化防護的複製結果函式
 async function copyResult() {
     let exportText = document.getElementById('exportText');
     if (!exportText.value) {
@@ -584,7 +718,6 @@ async function copyResult() {
         return;
     }
 
-    // 1. 優先嘗試現代瀏覽器 API
     if (navigator.clipboard && navigator.clipboard.writeText) {
         try {
             await navigator.clipboard.writeText(exportText.value);
@@ -595,7 +728,6 @@ async function copyResult() {
         }
     }
 
-    // 2. 傳統 DOM 降級備用方案
     try {
         exportText.focus();
         exportText.select();
@@ -610,10 +742,6 @@ async function copyResult() {
         alert('複製失敗，請手動選取表格或在外部瀏覽器開啟。');
     }
 }
-
-updateTitle();
-renderWeightRows();
-previewNames();
 </script>
 
 </body>
