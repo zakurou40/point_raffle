@@ -122,7 +122,7 @@
 
         /* 右側結果清單專用內部結構 */
         .export-header-area { padding: 8px 12px 4px 12px; background: white; flex-shrink: 0; }
-        .export-scroll-area { padding: 0 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+        .export-scroll-area { padding: 0 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; position: relative; }
         .export-footer-area { padding: 6px 10px; border-top: 1px solid #e1e8ed; background: #fff; flex-shrink: 0; }
 
         /* 表格化結果區 */
@@ -133,7 +133,16 @@
         .result-table th { background-color: #f8fafc; color: #4a5568; font-weight: 600; position: sticky; top: 0; z-index: 5; font-size: 12px; }
         .result-table tr:hover { background-color: #f8fafc; }
         
-        .export-textarea { display: none; }
+        /* 替換原本的 display: none，改為透明絕對定位，確保在 OBS 互動視窗中可被 select() */
+        .export-textarea { 
+            position: absolute; 
+            left: -9999px; 
+            top: 0; 
+            opacity: 0; 
+            pointer-events: none; 
+            height: 1px; 
+            width: 1px; 
+        }
     </style>
 </head>
 <body>
@@ -182,9 +191,9 @@
                             <input type="date" id="eventDate" onchange="previewNames()" style="margin-bottom:6px;">
                         </div>
 
-                        <!-- 新增：複製 OBS 瀏覽器來源連結按鈕 -->
+                        <!-- 複製 OBS 瀏覽器來源連結按鈕 -->
                         <div class="control-section" style="margin-bottom:0;">
-                            <button type="button" class="secondary-btn" onclick="copyObsLink()">🔗 複製 OBS 瀏覽器來源連結</button>
+                            <button type="button" class="secondary-btn" onclick="copyObsLink()">--- 複製 OBS 瀏覽器來源連結 ---</button>
                         </div>
                     </div>
                 </div>
@@ -356,10 +365,8 @@ function copyObsLink() {
     let currentUrl = window.location.href.split('#')[0].split('?')[0];
     let currentColor = document.getElementById('uiColorText').value;
     
-    // 組裝帶有目前客製化顏色參數的網址
     let obsLink = `${currentUrl}?color=${encodeURIComponent(currentColor)}`;
     
-    // 建立暫時的 textarea 進行複製
     let tempInput = document.createElement('textarea');
     tempInput.value = obsLink;
     document.body.appendChild(tempInput);
@@ -574,15 +581,39 @@ function runLottery() {
     }, 250);
 }
 
-function copyResult() {
+// 強化防護的複製結果函式（相容 OBS 互動介面）
+async function copyResult() {
     let exportText = document.getElementById('exportText');
     if (!exportText.value) {
         alert('目前沒有可複製的結果，請先點擊抽獎！(′д｀ )');
         return;
     }
-    exportText.select();
-    document.execCommand('copy');
-    alert('已成功複製表格資料！(❁´◡`❁)');
+
+    // 1. 優先嘗試現代瀏覽器 API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(exportText.value);
+            alert('已成功複製表格資料！(❁´◡`❁)');
+            return;
+        } catch (err) {
+            console.warn('Clipboard API 失敗，改用備用方案', err);
+        }
+    }
+
+    // 2. 傳統 DOM 降級備用方案
+    try {
+        exportText.focus();
+        exportText.select();
+        let successful = document.execCommand('copy');
+        if (successful) {
+            alert('已成功複製表格資料！(❁´◡`❁)');
+        } else {
+            alert('複製失敗，OBS 互動視窗可能限制了剪貼簿權限。建議在外部瀏覽器中開啟此工具進行複製！');
+        }
+    } catch (err) {
+        console.error('複製發生錯誤', err);
+        alert('複製失敗，請手動選取表格或在外部瀏覽器開啟。');
+    }
 }
 
 updateTitle();
