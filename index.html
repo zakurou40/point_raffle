@@ -10,7 +10,6 @@
             --primary-color: #ff8080;
             --bg-color: #f4f6f9;
             --panel-width: 320px;
-            /* 全面套用精緻的日系圓體作為全界面字型 */
             --main-font: 'Zen Maru Gothic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             --num-font: 'Quicksand', 'Zen Maru Gothic', sans-serif;
         }
@@ -320,7 +319,7 @@
 <script>
 let urlParams = new URLSearchParams(window.location.search);
 
-// 頁面載入時：優先讀取網址參數，若無則從 localStorage 讀取保留的紀錄
+// 頁面載入時：優先讀取網址參數，若無則自動帶入當天本地日期
 window.addEventListener('DOMContentLoaded', () => {
     let colorParam = urlParams.get('color');
     let titleParam = urlParams.get('title');
@@ -342,12 +341,13 @@ window.addEventListener('DOMContentLoaded', () => {
         changeUIColor('#ff8080', false);
     }
 
-    // 3. 載入日期
-    let savedDate = dateParam || localStorage.getItem('obs_event_date');
+    // 3. 載入日期：優先採用網址參數，若無則強制設定為當前本地日期
+    let savedDate = dateParam;
     if (savedDate) {
         document.getElementById('eventDate').value = savedDate;
     } else {
         document.getElementById('eventDate').valueAsDate = new Date();
+        localStorage.setItem('obs_event_date', document.getElementById('eventDate').value);
     }
 
     // 4. 載入權重設定
@@ -549,8 +549,9 @@ function previewNames() {
     document.getElementById('drawStatus').innerText = `狀態：未抽獎...`;
 
     let container = document.getElementById('cardContainer');
-    container.innerHTML = '';
     let tableBody = document.querySelector('#resultTable tbody');
+    
+    container.innerHTML = '';
     tableBody.innerHTML = '';
 
     if (names.length === 0) {
@@ -559,6 +560,9 @@ function previewNames() {
         return;
     }
 
+    let cardFragment = document.createDocumentFragment();
+    let tableFragment = document.createDocumentFragment();
+
     names.forEach(name => {
         let card = document.createElement('div');
         card.className = 'user-card';
@@ -566,7 +570,7 @@ function previewNames() {
             <div class="user-name" title="${name}">${name}</div>
             <div class="user-points" style="color:#cbd5e0;">?</div>
         `;
-        container.appendChild(card);
+        cardFragment.appendChild(card);
 
         let row = document.createElement('tr');
         row.innerHTML = `
@@ -574,11 +578,13 @@ function previewNames() {
             <td style="font-weight:600;">${name}</td>
             <td style="color:#cbd5e0;">-</td>
         `;
-        tableBody.appendChild(row);
+        tableFragment.appendChild(row);
     });
+
+    container.appendChild(cardFragment);
+    tableBody.appendChild(tableFragment);
 }
 
-// 還原已儲存的抽獎結果
 function restoreLotteryResults(savedResults) {
     let rawDate = document.getElementById('eventDate').value;
     let formattedDate = formatDateMMDDYY(rawDate);
@@ -587,10 +593,13 @@ function restoreLotteryResults(savedResults) {
     document.getElementById('drawStatus').innerText = `狀態：抽獎完成！`;
 
     let container = document.getElementById('cardContainer');
-    container.innerHTML = '';
     let tableBody = document.querySelector('#resultTable tbody');
+    
+    container.innerHTML = '';
     tableBody.innerHTML = '';
 
+    let cardFragment = document.createDocumentFragment();
+    let tableFragment = document.createDocumentFragment();
     let exportLines = [];
 
     savedResults.forEach(item => {
@@ -600,7 +609,7 @@ function restoreLotteryResults(savedResults) {
             <div class="user-name" title="${item.name}">${item.name}</div>
             <div class="user-points">${item.points} 點</div>
         `;
-        container.appendChild(card);
+        cardFragment.appendChild(card);
 
         let row = document.createElement('tr');
         row.innerHTML = `
@@ -608,11 +617,13 @@ function restoreLotteryResults(savedResults) {
             <td style="font-weight:600;">${item.name}</td>
             <td style="color:var(--primary-color); font-weight:bold; font-family:var(--num-font);">${item.points}</td>
         `;
-        tableBody.appendChild(row);
+        tableFragment.appendChild(row);
 
         exportLines.push(`${formattedDate}\t${item.name}\t${item.points}`);
     });
 
+    container.appendChild(cardFragment);
+    tableBody.appendChild(tableFragment);
     document.getElementById('exportText').value = exportLines.join('\n');
 }
 
@@ -640,10 +651,14 @@ function runLottery() {
     }
 
     let container = document.getElementById('cardContainer');
-    container.innerHTML = '';
     let tableBody = document.querySelector('#resultTable tbody');
+    
+    container.innerHTML = '';
     tableBody.innerHTML = '';
     
+    let cardFragment = document.createDocumentFragment();
+    let tableFragment = document.createDocumentFragment();
+
     names.forEach((name, index) => {
         let card = document.createElement('div');
         card.className = 'user-card';
@@ -651,7 +666,7 @@ function runLottery() {
             <div class="user-name" title="${name}">${name}</div>
             <div class="user-points drawing" id="pts-${index}">...</div>
         `;
-        container.appendChild(card);
+        cardFragment.appendChild(card);
 
         let row = document.createElement('tr');
         row.id = `row-${index}`;
@@ -660,8 +675,11 @@ function runLottery() {
             <td style="font-weight:600;">${name}</td>
             <td style="color:#cbd5e0;">...</td>
         `;
-        tableBody.appendChild(row);
+        tableFragment.appendChild(row);
     });
+
+    container.appendChild(cardFragment);
+    tableBody.appendChild(tableFragment);
 
     let exportLines = [];
     let lotteryResultsToSave = [];
@@ -674,7 +692,6 @@ function runLottery() {
             document.getElementById('drawStatus').innerText = `狀態：抽獎完成！`;
             document.getElementById('exportText').value = exportLines.join('\n');
             
-            // 完整儲存抽獎後的名單與點數資料
             localStorage.setItem('obs_lottery_results', JSON.stringify(lotteryResultsToSave));
             return;
         }
@@ -683,26 +700,28 @@ function runLottery() {
         let rand = Math.random() * 100;
         let assignedPoints = weightData[0] ? weightData[0].point : 1;
         
-        let cwFound = false;
         for (let cw of cumulativeWeights) {
             if (rand <= cw.limit) {
                 assignedPoints = cw.points;
-                cwFound = true;
                 break;
             }
         }
 
         let ptsEl = document.getElementById(`pts-${currentIndex}`);
-        ptsEl.classList.remove('drawing');
-        ptsEl.innerText = `${assignedPoints} 點`;
-        ptsEl.classList.add('pop');
+        if (ptsEl) {
+            ptsEl.classList.remove('drawing');
+            ptsEl.innerText = `${assignedPoints} 點`;
+            ptsEl.classList.add('pop');
+        }
 
         let rowEl = document.getElementById(`row-${currentIndex}`);
-        rowEl.innerHTML = `
-            <td>${formattedDate}</td>
-            <td style="font-weight:600;">${name}</td>
-            <td style="color:var(--primary-color); font-weight:bold; font-family:var(--num-font);">${assignedPoints}</td>
-        `;
+        if (rowEl) {
+            rowEl.innerHTML = `
+                <td>${formattedDate}</td>
+                <td style="font-weight:600;">${name}</td>
+                <td style="color:var(--primary-color); font-weight:bold; font-family:var(--num-font);">${assignedPoints}</td>
+            `;
+        }
 
         exportLines.push(`${formattedDate}\t${name}\t${assignedPoints}`);
         lotteryResultsToSave.push({ name: name, points: assignedPoints });
@@ -710,7 +729,6 @@ function runLottery() {
     }, 250);
 }
 
-// 強化防護的複製結果函式
 async function copyResult() {
     let exportText = document.getElementById('exportText');
     if (!exportText.value) {
